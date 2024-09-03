@@ -1,0 +1,25 @@
+\ Model two_stage_firefighting_copy
+\ LP format - for model browsing. Use MPS format to capture full model detail.
+Maximize
+ 
+Subject To
+ R30251: - 22.17157287525381 x_ijk[1,9,1] - 22.17157287525381 x_ijk[1,9,2]
+   - 22.17157287525381 x_ijk[3,9,1] - 22.17157287525381 x_ijk[3,9,2]
+   - 22.17157287525381 x_ijk[5,9,1] - 22.17157287525381 x_ijk[5,9,2]
+   - 22.17157287525381 x_ijk[6,9,1] - 22.17157287525381 x_ijk[6,9,2]
+   - 22.17157287525381 x_ijk[7,9,1] - 22.17157287525381 x_ijk[7,9,2]
+   - 22.17157287525381 x_ijk[8,9,1] - 22.17157287525381 x_ijk[8,9,2]
+   + tv_j[9] <= 0
+ R77258: - tv_j[9] + 22.17167287525381 s6_iw[9,1] + te_jw[9,1]
+   <= 22.17157287525381
+ R191264: - ts_jw[9,1] + tm_jw[9,1] = 500
+ R197264: - tm_jw[9,1] + te_jw[9,1] = 5000
+Bounds
+ tv_j[9] free
+ tm_jw[9,1] free
+ te_jw[9,1] free
+Binaries
+ x_ijk[1,9,1] x_ijk[1,9,2] x_ijk[3,9,1] x_ijk[3,9,2] x_ijk[5,9,1]
+ x_ijk[5,9,2] x_ijk[6,9,1] x_ijk[6,9,2] x_ijk[7,9,1] x_ijk[7,9,2]
+ x_ijk[8,9,1] x_ijk[8,9,2] s6_iw[9,1]
+End
