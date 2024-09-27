@@ -49,12 +49,44 @@ class InputsSetup:
         self.problem_data_df = user_inputs.problem_data_df.copy()
         # self.problem_data_df = pd.read_excel(self.directory, sheet_name="inputs_df", engine='openpyxl').dropna(axis=0, how='all').dropna(axis=1, how='all')
 
-        self.scenarios_df = user_inputs.scenarios_df.copy()
+        # self.experiment_mode = experiment_mode
+        self.experiment_mode = user_inputs.experiment_mode
+        self.n_scenarios = getattr(user_inputs, 'n_scenarios', None)
+        self.scenario_rate = getattr(user_inputs, 'scenario_rate', None)
+        self.max_scenario_number = getattr(user_inputs, 'max_scenario_number', None) #user_inputs.max_scenario_number
+        self.min_scenario_rate = self.parameters_df.loc["min_scenario_rate", "value"]
+        self.max_scenario_rate = self.parameters_df.loc["max_scenario_rate", "value"]
+        self.subfolder_path = getattr(user_inputs, 'subfolder_path', None)
+        self.start_solution_file = self.parameters_df.loc["start_solution_file", "value"]
+
+        self.optimization_mode = user_inputs.optimization_mode
+        if self.optimization_mode == "deterministic_optimal_evaluation":
+            self.deterministic_optimal_solution_file = self.parameters_df.loc["deterministic_optimal_solution_file", "value"]
+            self.optimal_sol_path = os.path.join(self.subfolder_path, self.deterministic_optimal_solution_file)
+
+        # scenario_run: test scenarios, where the number is changing in [min_scenario_number, max_scenario_number], rates are uniformly distrubited [min_scenario_rate,max_scenario_rate] and probabities are uniformly distributed between
+        if self.experiment_mode == "scenario_run":
+            # Create the DataFrame
+            self.scenarios_df = pd.DataFrame({
+                'scenario_id': np.arange(1, self.n_scenarios + 1),
+                'scenario_probability':  np.round(np.full(self.n_scenarios, 1 / self.n_scenarios), 4),
+                'scenario_rate_change':   np.round(np.linspace(self.min_scenario_rate, self.max_scenario_rate, self.n_scenarios), 4)
+            })
+        # scenario_increasing_deviaton_run:
+        elif self.experiment_mode == "scenario_increasing_deviation_run":
+            # Create the DataFrame
+            self.scenarios_df = pd.DataFrame({
+                'scenario_id': np.arange(1, self.n_scenarios + 1),
+                'scenario_probability':  np.round(np.full(self.n_scenarios, 1 / self.n_scenarios), 4),
+                'scenario_rate_change':   np.round(np.linspace(-self.scenario_rate, self.scenario_rate, self.n_scenarios), 4)
+            })
+
+
+        else:
+            self.scenarios_df = user_inputs.scenarios_df.copy()
         # self.problem_data_df = pd.read_excel(self.directory, sheet_name="inputs_df", engine='openpyxl').dropna(axis=0, how='all').dropna(axis=1, how='all')
 
 
-        # self.experiment_mode = experiment_mode
-        self.experiment_mode = self.parameters_df.loc["mode", "value"]
 
         if self.experiment_mode == "combination_run":
             self.problem_data_df.loc[[x - 1 for x in list(list_of_active_fires)], "state"] = 1
@@ -77,7 +109,7 @@ class InputsSetup:
         self.base_node_id = self.problem_data_df.query("node_state == 6")["node_id"].item()
         self.water_node_id = self.problem_data_df.query("node_state == 5")["node_id"].tolist()
         self.block_node_id = self.problem_data_df.query("node_state == 4")["node_id"].tolist()
-        self.small_enough_coefficient = 10 ** -4
+        self.small_enough_coefficient = 10 ** -3
         # scenario parameters
         self.n_scenarios = len(self.scenarios_df)
         self.scenarios_list = self.scenarios_df["scenario_id"].tolist()
@@ -308,7 +340,7 @@ class InputsSetup:
         self.M_30 = dict()
         for i in self.fire_ready_node_ids:
             # self.M_30[i] = (self.time_limit - self.links_durations[(i, self.base_node_id, 1)]) + self.small_enough_coefficient + self.big_m_augmentation_for_rounding_errors
-            self.M_30[i] = (self.time_limit + (self.node_area / self.ns_fire_spread_rate[i, w]) + (self.node_area / self.self.ns_fire_amelioration_rate[i, w]) - self.links_durations[(self.base_node_id, i, 1)]) + self.small_enough_coefficient + self.big_m_augmentation_for_rounding_errors
+            self.M_30[i] = (self.time_limit + (self.node_area / self.ns_fire_spread_rate[i, w]) + (self.node_area / self.ns_fire_amelioration_rate[i, w]) - self.links_durations[(self.base_node_id, i, 1)]) + self.small_enough_coefficient + self.big_m_augmentation_for_rounding_errors
             # self.M_30[i] = 999
 
 
@@ -317,7 +349,7 @@ class InputsSetup:
         #     M_26[j] = len([l for l in mip_inputs.neighborhood_links if l[1] == j])
         #     # M_26[j] = 999
 
-        self.M_44 = 1 * 30 * 24
+        self.M_45 = 1 * 30 * 24
 
 
 # def list_combinations():
@@ -336,7 +368,9 @@ class UserInputsRead:
 
         # read problem input
         self.directory = os.path.join('inputs', 'inputs_to_load.xlsx')  # os.getcwd(),
-        self.parameters_df = pd.read_excel(self.directory, sheet_name="parameters", index_col=0, engine='openpyxl').dropna(axis=0, how='all').dropna(axis=1, how='all')
+        self.parameters_df = pd.read_excel(self.directory, sheet_name="parameters", index_col=0, engine='openpyxl')
+
+        # self.parameters_df = pd.read_excel(self.directory, sheet_name="parameters", index_col=0, engine='openpyxl').dropna(axis=0, how='all').dropna(axis=1, how='all')
         self.problem_data_df = pd.read_excel(self.directory, sheet_name="problem_input", engine='openpyxl').dropna(axis=0, how='all').dropna(axis=1, how='all')
         self.scenarios_df = pd.read_excel(self.directory, sheet_name="scenarios_input", engine='openpyxl').dropna(axis=0, how='all').dropna(axis=1, how='all')
 

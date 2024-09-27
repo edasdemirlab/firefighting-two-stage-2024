@@ -22,8 +22,8 @@ from random import sample
 
 # read user inputs
 user_inputs = mip_setup.UserInputsRead()
-experiment_mode = user_inputs.parameters_df.loc["mode", "value"]
-
+user_inputs.optimization_mode = user_inputs.parameters_df.loc["optimization_mode", "value"]
+user_inputs.experiment_mode = user_inputs.parameters_df.loc["experiment_mode", "value"]
 
 # modes
 # single_run: runs MIP as a single optimization task
@@ -31,16 +31,63 @@ experiment_mode = user_inputs.parameters_df.loc["mode", "value"]
 # instance_generate: generate a new WUI scenario based case instance
 
 
-
-
-
 # run optimization in single_run_mode
-if experiment_mode == "single_run":
+if user_inputs.experiment_mode == "single_run":
+    if user_inputs.optimization_mode == "deterministic_optimal_evaluation":
+        base_output_folder = 'outputs'
+        subfolder_name = user_inputs.parameters_df.loc["folder_to_be_evaluated", "value"]
+        user_inputs.subfolder_path = os.path.join(base_output_folder, subfolder_name)
     mip_inputs = mip_setup.InputsSetup(user_inputs)
     mip_solve.mathematical_model_solve(mip_inputs)
 
-# run optimization in combination_mode
-elif experiment_mode == "combination_run":
+elif user_inputs.experiment_mode == "scenario_run":
+    min_scenario_number = user_inputs.parameters_df.loc["min_scenario_number", "value"]
+    user_inputs.max_scenario_number = user_inputs.parameters_df.loc["max_scenario_number", "value"]
+    step_size_scenario_number = user_inputs.parameters_df.loc["step_size_scenario_number", "value"]
+    scenario_size_set = list(range(min_scenario_number, user_inputs.max_scenario_number + 1, step_size_scenario_number))
+    base_output_folder = 'outputs'
+
+    if user_inputs.optimization_mode == "two_stage_optimization":
+        current_time = str(datetime.now().strftime('%Y_%m_%d_%H_%M'))
+        subfolder_name = f"scenario_run_on_{current_time}"
+        user_inputs.subfolder_path = os.path.join(base_output_folder, subfolder_name)
+        os.makedirs(user_inputs.subfolder_path, exist_ok=True)
+    elif user_inputs.optimization_mode == "deterministic_optimal_evaluation":
+        subfolder_name = user_inputs.parameters_df.loc["folder_to_be_evaluated", "value"]
+        user_inputs.subfolder_path = os.path.join(base_output_folder, subfolder_name)
+    for n_scenarios in scenario_size_set:
+        print("The run starts for {} scenarios.".format(n_scenarios))
+        user_inputs.n_scenarios = n_scenarios
+        mip_inputs = mip_setup.InputsSetup(user_inputs)
+        mip_solve.mathematical_model_solve(mip_inputs)
+
+elif user_inputs.experiment_mode == "scenario_increasing_deviation_run":
+    min_scenario_number = user_inputs.parameters_df.loc["increasing_deviation_min_scenario_number", "value"]
+    max_scenario_number = user_inputs.parameters_df.loc["increasing_deviation_max_scenario_number", "value"]
+    step_size_scenario_number = user_inputs.parameters_df.loc["increasing_deviation_step_size_scenario_number", "value"]
+    scenario_size_set = list(range(min_scenario_number, max_scenario_number+1, step_size_scenario_number))
+
+    min_scenario_rate = user_inputs.parameters_df.loc["increasing_deviation_min_rate", "value"]
+    max_scenario_rate = user_inputs.parameters_df.loc["increasing_deviation_max_rate", "value"]
+    step_size_scenario_rate = user_inputs.parameters_df.loc["increasing_deviation_step_size_rate", "value"]
+    scenario_rate_set = np.round(np.arange(min_scenario_rate, max_scenario_rate+step_size_scenario_rate, step_size_scenario_rate), 1).tolist()
+
+
+    current_time = str(datetime.now().strftime('%Y_%m_%d_%H_%M'))
+    base_output_folder = 'outputs'
+    subfolder_name = f"scenario_run_increasing_deviation_run_on_{current_time}"
+    user_inputs.subfolder_path = os.path.join(base_output_folder, subfolder_name)
+    os.makedirs(user_inputs.subfolder_path, exist_ok=True)
+
+    for n_scenarios in scenario_size_set:
+        for scenario_rate in scenario_rate_set:
+            print("The run starts for {} scenarios and {} rate.".format(n_scenarios, scenario_rate))
+            user_inputs.n_scenarios = n_scenarios
+            user_inputs.scenario_rate = scenario_rate
+            mip_inputs = mip_setup.InputsSetup(user_inputs)
+            mip_solve.mathematical_model_solve(mip_inputs)
+
+elif user_inputs.experiment_mode == "combination_run":
     fire_prone_node_list = user_inputs.problem_data_df.query("state == 0")["node_id"].tolist()
     list_combinations = list()
 
@@ -58,14 +105,5 @@ elif experiment_mode == "combination_run":
         mip_inputs = mip_setup.InputsSetup(user_inputs, i)
         run_result = mip_solve.mathematical_model_solve(mip_inputs)
 
-elif experiment_mode == "instance_generation":
-    user_inputs.case_output_file_name = os.path.join('outputs', "wui_scenario_{0}.csv".format(str(datetime.now().strftime('%Y_%m_%d_%H_%M_%S'))))
-    generator.generate_grid(user_inputs)
-    print("The inputs of the new instance are successfully generated! see outputs folder.")
 
 
-#esther -->
-# the role of default density
-# how do we determine number of waters and blocks # sometimes it does not create blocks (is this case for water as well ? Should we make sure that there has to be at least 1 water and block when they are set to true?)
-# what is the relationship between n and m
-# initial fires

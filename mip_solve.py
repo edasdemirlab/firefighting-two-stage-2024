@@ -7,6 +7,23 @@ import os
 from datetime import datetime
 import time
 
+def callback(model, where):
+    if where == GRB.Callback.MESSAGE:
+        msg = model.cbGet(GRB.Callback.MSG_STRING)
+        m = re.search("Best objective ([^,]+), best bound ([^,]+), gap (.*)%$", msg)
+        if m:
+            obj_best, obj_bound, gap = m.group(1, 2, 3)
+            obj_best = float(obj_best)
+            obj_bound = float(obj_bound)
+            gap = float(gap) / 100
+            print(f"obj_best={obj_best}, obj_bound={obj_bound}, gap={gap}")
+            model._bests.append(obj_best)
+            model._bounds.append(obj_bound)
+            model._gaps.append(gap)
+
+
+
+
 def model_organize_results(var_values, var_df):
     counter = 0
     for v in var_values:
@@ -41,12 +58,14 @@ def mathematical_model_solve(mip_inputs):
     tv_j = model.addVars(
         mip_inputs.fire_ready_node_ids,
         lb=0,
+        # ub=mip_inputs.time_limit,
         vtype=GRB.CONTINUOUS,
         name="tv_j",
     )
 
     tv_h = model.addVar(
         lb=0,
+        # ub=mip_inputs.time_limit,
         vtype=GRB.CONTINUOUS,
         name="tv_h",
     )
@@ -55,20 +74,22 @@ def mathematical_model_solve(mip_inputs):
     lv_j = model.addVars(
         mip_inputs.fire_ready_node_ids,
         lb=0,
+        # ub=mip_inputs.time_limit,
         vtype=GRB.CONTINUOUS,
         name="lv_j",
     )
 
     lv_h = model.addVar(
         lb=0,
+        # ub=mip_inputs.time_limit,
         vtype=GRB.CONTINUOUS,
         name="lv_h",
     )
 
-    w_ijlk = model.addVars(
+    w_ijkl = model.addVars(
         mip_inputs.s_ijkw_links,
         vtype=GRB.BINARY,
-        name="w_ijlk",
+        name="w_ijkl",
     )
 
     # stage 2 decision variables
@@ -135,6 +156,7 @@ def mathematical_model_solve(mip_inputs):
     ts_jw = model.addVars(
         mip_inputs.ns_pair,
         lb=0,
+        # ub=mip_inputs.time_limit,
         vtype=GRB.CONTINUOUS,
         name="ts_jw",
     )
@@ -142,6 +164,7 @@ def mathematical_model_solve(mip_inputs):
     tm_jw = model.addVars(
         mip_inputs.ns_pair,
         lb=0,
+        # ub=mip_inputs.time_limit*2,
         vtype=GRB.CONTINUOUS,
         name="tm_jw",
     )
@@ -149,6 +172,7 @@ def mathematical_model_solve(mip_inputs):
     te_jw = model.addVars(
         mip_inputs.ns_pair,
         lb=0,
+        # ub=mip_inputs.time_limit * 2,
         vtype=GRB.CONTINUOUS,
         name="te_jw",
     )
@@ -157,6 +181,7 @@ def mathematical_model_solve(mip_inputs):
     r_jw = model.addVars(
         mip_inputs.ns_pair,
         lb=0,
+        # ub=[value for value in mip_inputs.initial_values.values() for _ in range(mip_inputs.n_scenarios)],
         vtype=GRB.CONTINUOUS,
         name="r_jw",
     )
@@ -168,13 +193,18 @@ def mathematical_model_solve(mip_inputs):
     # cost_third_party_routes = s_tr_3.prod(mip_inputs.routes_third_party_cost_per_hauler)
 
 
-
     expected_collected_value = r_jw.prod({(j, w): mip_inputs.scenario_probabilities[w - 1] for (j, w) in r_jw.keys()})
-    penalty_coef_return_time = 0.01
-    penalty_return_time = penalty_coef_return_time * tv_h
+    # penalty_coef_return_time = 0
+    # penalty_return_time = penalty_coef_return_time * tv_h
 
     # model.setObjective(obj_max - penalty_coef_spread * obj_penalize_fire_spread - penalty_coef_return_time * obj_penalize_operation_time) #
-    model.setObjective(expected_collected_value - penalty_return_time)
+    # model.setObjective(expected_collected_value - penalty_return_time)
+
+    # set objectives
+    model.NumObj = 2
+
+    model.setObjectiveN(expected_collected_value, index=0, priority=2, weight=1, name='expected_collected_value')
+    model.setObjectiveN(tv_h, index=1, priority=1, weight=-1, name='tv_h')
 
 
     # equations for prize collection
@@ -187,7 +217,7 @@ def mathematical_model_solve(mip_inputs):
             model.addConstr(r_jw[j, w] <= mip_inputs.initial_values[j] * (2 - s6_iw[j,w] - y_jw[j,w]))
             model.addConstr(r_jw[j, w] <= mip_inputs.initial_values[j] * (1 - s5_iw[j, w]))
             model.addConstr(b_jw[j, w] >= y_jw[j, w] - mip_inputs.M_6[j] * tv_j[j])
-            model.addConstr(r_jw[j, w] <= 10)
+            # model.addConstr(r_jw[j, w] <= 10)
 
 
     # equations for scheduling and routing decisions
@@ -210,11 +240,11 @@ def mathematical_model_solve(mip_inputs):
 
     # Constraint 11 - water resource selection for refilling
     for i in mip_inputs.s_ijkw_links:
-        model.addConstr(x_ijk.sum(i[0], i[1], i[2]) == w_ijlk.sum(i[0], i[1], i[2], '*'))
+        model.addConstr(x_ijk.sum(i[0], i[1], i[2]) == w_ijkl.sum(i[0], i[1], i[2], '*'))
 
     # Constraint 12 - water resource connections for refilling
     for i in mip_inputs.s_ijkw_links:
-        model.addConstr(2 * w_ijlk[i] <= x_ijk.sum(i[0], i[3], i[2]) + x_ijk.sum(i[3], i[1], i[2]) )
+        model.addConstr(2 * w_ijkl[i] <= x_ijk.sum(i[0], i[3], i[2]) + x_ijk.sum(i[3], i[1], i[2]) )
 
     # Constraint 13 - water resource connections for refilling
     for i in mip_inputs.fire_ready_node_ids:
@@ -428,17 +458,17 @@ def mathematical_model_solve(mip_inputs):
                 #constraint 43
                 model.addConstr(q_ijw[i, j, w] <= z_ijw[i, j, w])
                 #constraint 44
-                model.addConstr(ts_jw[j, w] <= tm_jw[i, w] + mip_inputs.M_44 * (1 - z_ijw[i, j, w]))
+                model.addConstr(ts_jw[j, w] <= tm_jw[i, w] + mip_inputs.M_45 * (1 - z_ijw[i, j, w]))
                 # constraint 45
                 if j in mip_inputs.set_of_active_fires_at_start:
-                    model.addConstr(ts_jw[j, w] >= tm_jw[i, w] - mip_inputs.M_44 * (2 - z_ijw[i, j, w] - q_ijw[i, j, w] + 1))
+                    model.addConstr(ts_jw[j, w] >= tm_jw[i, w] - mip_inputs.M_45 * (2 - z_ijw[i, j, w] - q_ijw[i, j, w] + 1))
                 else:
-                    model.addConstr(ts_jw[j, w] >= tm_jw[i, w] - mip_inputs.M_44 * (2 - z_ijw[i, j, w] - q_ijw[i, j, w] + 0))
+                    model.addConstr(ts_jw[j, w] >= tm_jw[i, w] - mip_inputs.M_45 * (2 - z_ijw[i, j, w] - q_ijw[i, j, w] + 0))
 
     # Constraint 47- determine fire arrival (spread) time
     for j in mip_inputs.fire_ready_node_ids:
         for w in mip_inputs.scenarios_list:
-            model.addConstr(ts_jw[j, w] <= big_M_temp * z_ijw.sum('*', j, w))
+            model.addConstr(ts_jw[j, w] <= mip_inputs.M_45 * z_ijw.sum('*', j, w))
 
     # Constraint 48 - start time of active fires
     for w in mip_inputs.scenarios_list:
@@ -468,26 +498,104 @@ def mathematical_model_solve(mip_inputs):
     #     i_neighborhood_size = len(i_neighborhood)
     #     model.addConstr(gp.quicksum(y_j[j] for j in i_neighborhood) >= i_neighborhood_size * s2_i[i])
 
+    # Define the file path and sheet name
+    if mip_inputs.optimization_mode == "two_stage_optimization":
+        if mip_inputs.experiment_mode == "single_run":
+            file_name = mip_inputs.start_solution_file
+            start_sol_path = os.path.join("inputs", "start_solution", file_name) if file_name is not None and not pd.isna(file_name) else ""
+        else:
+            file_name = "scenario_run_{0}_scenarios.xlsx".format(mip_inputs.n_scenarios-2)
+            start_sol_path = os.path.join(mip_inputs.subfolder_path, file_name) if mip_inputs.subfolder_path else ""
+        x_ijk_sheet_name = 'x_ijk_results'
+        w_ijkl_sheet_name = 'w_ijkl_results'
+
+        # Step 2: Check if the file exists
+        if os.path.exists(start_sol_path):
+            # Step 3: Read the Excel file and the specific sheet if it exists
+            x_ijk_start_df = pd.read_excel(start_sol_path, sheet_name=x_ijk_sheet_name)
+            w_ijkl_start_df = pd.read_excel(start_sol_path, sheet_name=w_ijkl_sheet_name)
+
+            # Step 4: Set the start solution for x_ijk from the DataFrame
+            for _, row in x_ijk_start_df.iterrows():
+                var_name = row['var_name']  # You can use this if you want variable names (e.g., 'x_ijk')
+                i = row['from_node_id']
+                j = row['to_node_id']
+                k = row['vehicle_id']
+                value = row['value']
+
+                # Set the starting solution for the variable x_ijk[i, j, k] if it exists
+                x_ijk[(i, j, k)].start = value
+
+            # Step 5: Set the start solution for w_ijkl from the DataFrame
+            for _, row in w_ijkl_start_df.iterrows():
+                var_name = row['var_name']  # You can use this if you want variable names (e.g., 'x_ijk')
+                i = row['from_node_id']
+                j = row['to_node_id']
+                k = row['vehicle_id']
+                l = row['water_node_id']
+                value = row['value']
+
+                # Set the starting solution for the variable x_ijk[i, j, k] if it exists
+                w_ijkl[(i, j, k, l)].start = value
+
+        else:
+            print(f"File '{file_name}' does not exist. No start solution will be fed to the model.")
+
+    elif mip_inputs.optimization_mode == "deterministic_optimal_evaluation":
+        x_ijk_sheet_name = 'x_ijk_results'
+        w_ijkl_sheet_name = 'w_ijkl_results'
+        if os.path.exists(mip_inputs.optimal_sol_path):
+            # Step 3: Read the Excel file and the specific sheet if it exists
+            x_ijk_start_df = pd.read_excel(mip_inputs.optimal_sol_path, sheet_name=x_ijk_sheet_name)
+            w_ijkl_start_df = pd.read_excel(mip_inputs.optimal_sol_path, sheet_name=w_ijkl_sheet_name)
+
+            # Step 4: Set the start solution for x_ijk from the DataFrame
+            for _, row in x_ijk_start_df.iterrows():
+                var_name = row['var_name']  # You can use this if you want variable names (e.g., 'x_ijk')
+                i = row['from_node_id']
+                j = row['to_node_id']
+                k = row['vehicle_id']
+                value = row['value']
+                # Set the starting solution for the variable x_ijk[i, j, k] if it exists
+                model.addConstr(x_ijk[i, j, k] == value)
+            print(f"x_ijk variables have been succesfully set!")
+
+            # Step 5: Set the start solution for w_ijkl from the DataFrame
+            for _, row in w_ijkl_start_df.iterrows():
+                var_name = row['var_name']  # You can use this if you want variable names (e.g., 'x_ijk')
+                i = row['from_node_id']
+                j = row['to_node_id']
+                k = row['vehicle_id']
+                l = row['water_node_id']
+                value = row['value']
+                # Set the starting solution for the variable x_ijk[i, j, k] if it exists
+                model.addConstr(w_ijkl[i, j, k, l] == value)
+            print(f"w_ijkl variables have been succesfully set!")
+
+        else:
+            print(f"Deterministic optimal solution file does not exist. No start solution will be fed to the model.")
+
+
 
     model.ModelSense = -1  # set objective to maximization
-    # model.params.TimeLimit = 1200
-    model.params.MIPGap = 0.04
-    # p=model.presolve()
-
-
-    model.params.MIPFocus = 1
-    # model.params.CliqueCuts = 2
-    # model.params.Cuts = 2
-    # model.params.Presolve = 2
-    # model.params.BranchDir = 1
-    model.params.Heuristics = 0.1
-    # model.params.ImproveStartGap = 0.1
-    model.params.NoRelHeurTime = 120
+    # model.params.TimeLimit = 60
+    model.params.MIPGap = 0.03
+    model.params.Presolve = 2
+    model.params.Cuts = 2
+    model.params.MIPFocus = 2
+    # model.params.Threads = 1
+    # model.params.RINS = 0
 
     # model.params.LogFile = "gurobi_log"
     # model.params.Heuristics = 0.2
-    # model.params.Threads = 8
 
+    env0 = model.getMultiobjEnv(0)
+    env0.setParam('TimeLimit', 10800)
+    # env0.setParam('NoRelHeurTime', 120)
+    # env0.setParam('MIPFocus', 3)
+
+    env1 = model.getMultiobjEnv(1)
+    env1.setParam('TimeLimit', 10)
 
     # model.update()
     # model.write("model_hand2.lp")
@@ -496,15 +604,24 @@ def mathematical_model_solve(mip_inputs):
     # 0.455*0.355
     model.update()
     model.printStats()
+    #p=model.presolve()
+    # p.printStats()
+
+    model._bounds = []
+    model._bests = []
+    model._gaps = []
+
+
+
     start_time = time.time()
-    model.optimize()
+    model.optimize(callback)
     end_time = time.time()
     run_time_cpu = round(end_time - start_time, 2)
 
     # for c in model.getConstrs():
     #     if c.Slack < 1e-6:
     #         print('Constraint %s is active at solution point' % (c.ConstrName))
-    #
+
 
     if model.Status == GRB.Status.INFEASIBLE:
         max_dev_result = None
@@ -550,8 +667,9 @@ def mathematical_model_solve(mip_inputs):
         r_jw_results_df = pd.DataFrame(columns=['var_name', 'node_id', 'scenario_id', 'value'])
         r_jw_results_df = model_organize_results(r_jw.values(), r_jw_results_df)
 
-        w_ijlk_results_df = pd.DataFrame(columns=['var_name', 'from_node_id', 'to_node_id', 'vehicle_id', 'water_node_id', 'value'])
-        w_ijlk_results_df = model_organize_results(w_ijlk.values(), w_ijlk_results_df)
+
+        w_ijkl_results_df = pd.DataFrame(columns=['var_name', 'from_node_id', 'to_node_id', 'vehicle_id', 'water_node_id', 'value'])
+        w_ijkl_results_df = model_organize_results(w_ijkl.values(), w_ijkl_results_df)
 
         s1_iw_results_df = pd.DataFrame(columns=['var_name', 'node_id', 'scenario_id', 'value'])
         s2_iw_results_df = pd.DataFrame(columns=['var_name', 'node_id', 'scenario_id', 'value'])
@@ -577,16 +695,27 @@ def mathematical_model_solve(mip_inputs):
             for j in set(key[1] for key in r_jw)
         }
 
+
+
+
         # Convert the dictionary to a DataFrame
         scenario_collected_value_results_df = pd.DataFrame(list(scenario_collected_value_results.items()), columns=['scenario_id', 'collected_value'])
 
-        global_results_df = pd.DataFrame(columns=['expected_collected_value', 'scenario_collected_value_results', 'model_obj_value', 'model_obj_bound', 'gap', 'gurobi_time', 'python_time'])
-        global_results_df.loc[len(global_results_df.index)] = [expected_collected_value_result, scenario_collected_value_results, model.objval, model.objbound, model.mipgap,
+
+        global_results_df = pd.DataFrame(columns=['n_scenarios', 'expected_collected_value', 'scenario_collected_value_results', 'model_obj_1_value', 'model_obj_2_value', 'model_obj_1_bound', 'model_obj_2_bound', 'gap_1', 'gap_2', 'gurobi_time', 'python_time'])
+
+        global_results_df.loc[len(global_results_df.index)] = [mip_inputs.n_scenarios, expected_collected_value_result,
+                                                               scenario_collected_value_results, *model._bests,
+                                                               *model._bounds, *model._gaps,
                                                                model.runtime, run_time_cpu]
+
+
+        # global_results_df.loc[len(global_results_df.index)] = [expected_collected_value_result, scenario_collected_value_results, model.objval, model.objbound, model.mipgap,
+        #                                                        model.runtime, run_time_cpu]
 
         global_results_df["operation_duration"] = tv_h.X
         global_results_df["number_of_nodes"] = mip_inputs.n_nodes
-        global_results_df["number_of_scenarios"] = mip_inputs.n_scenarios
+        # global_results_df["number_of_scenarios"] = mip_inputs.n_scenarios
         global_results_df["number_of_initial_fires"] = len(mip_inputs.set_of_active_fires_at_start)
         global_results_df["average_number_of_fires_per_scenario"] = sum(y_jw_results_df.value > 0)/mip_inputs.n_scenarios
         # global_results_df["number_of_job_processed"] = sum(tv_j_results_df.value > 0) - 1  # subtract the base return time
@@ -595,48 +724,93 @@ def mathematical_model_solve(mip_inputs):
         global_results_df["number_of_vehicles_used"] = len(np.unique(x_ijk_results_df.query("`from_node_id` == @mip_inputs.base_node_id_string & `value` > 0")["vehicle_id"].tolist()))  # subtract the base return time
         global_results_df["initial_fire_node_IDs"] = ','.join(map(str, mip_inputs.set_of_active_fires_at_start))
 
+
+        global_results_df_row = global_results_df.copy()
+
+
         # Convert to a two-column DataFrame
         global_results_df = pd.DataFrame({
             'result_Name': global_results_df.columns,
-            'value': global_results_df.iloc[0].values
+            f'{mip_inputs.n_scenarios}_scenarios': global_results_df.iloc[0].values
         })
 
+
+
+
+        current_time = str(datetime.now().strftime('%Y_%m_%d_%H_%M'))
+        base_output_folder = 'outputs'
+
         if mip_inputs.experiment_mode == "single_run":
-            writer_file_name = os.path.join('outputs', "single_run_results_{0}_nodes_{1}.xlsx".format(mip_inputs.n_nodes,
-                                                                                           str(datetime.now().strftime(
-                                                                                               '%Y_%m_%d_%H_%M'))))
-            writer = pd.ExcelWriter(writer_file_name)
-            global_results_df.to_excel(writer, sheet_name='global_results')
-            scenario_collected_value_results_df.to_excel(writer, sheet_name='scenario_collected_value')
-            x_ijk_results_df.to_excel(writer, sheet_name='x_ijk_results')
-            y_jw_results_df.to_excel(writer, sheet_name='y_jw_results')
-            z_ijw_results_df.to_excel(writer, sheet_name='z_ijw_results')
-            q_ijw_results_df.to_excel(writer, sheet_name='q_ijw_results')
-            b_jw_results_df.to_excel(writer, sheet_name='b_jw_results')
-            ts_jw_results_df.to_excel(writer, sheet_name='ts_jw_results')
-            tm_jw_results_df.to_excel(writer, sheet_name='tm_jw_results')
-            te_jw_results_df.to_excel(writer, sheet_name='te_jw_results')
-            tv_j_results_df.to_excel(writer, sheet_name='tv_j_results')
-            tl_j_results_df.to_excel(writer, sheet_name='tl_j_results')
-            r_jw_results_df.to_excel(writer, sheet_name='r_jw_results')
-            w_ijlk_results_df.to_excel(writer, sheet_name='w_ijkw_results')
-            s_ciw_results_df.to_excel(writer, sheet_name='s_ciw_results')
-
-            mip_inputs.problem_data_df.to_excel(writer, sheet_name='inputs_problem_data')
-            mip_inputs.distance_df["flight_time"] = mip_inputs.distance_df["distance"] / mip_inputs.vehicle_flight_speed
-            mip_inputs.distance_df.to_excel(writer, sheet_name='inputs_distances')
-            mip_inputs.parameters_df.to_excel(writer, sheet_name='inputs_parameters')
-            mip_inputs.fire_ready_nodes_stage_2_df.to_excel(writer, sheet_name='scenario_inputs')
-            writer.close()
-
-        elif mip_inputs.experiment_mode == "combination_run":
-            writer_file_name = os.path.join('outputs', "combination_results_{0}_nodes_{1}.csv".format(mip_inputs.n_nodes, mip_inputs.run_start_date))
-            if os.path.isfile(writer_file_name):
-                global_results_df.to_csv(writer_file_name, mode="a", index=False, header=False)
+            writer_global_file_name = ""
+            if mip_inputs.optimization_mode == "deterministic_optimal_evaluation":
+                writer_file_name = os.path.join(base_output_folder, "single_run_deterministic_eval_{0}_nodes_{1}.xlsx".format(mip_inputs.n_nodes, current_time))
             else:
-                global_results_df.to_csv(writer_file_name, mode="a", index=False, header=True)
+                writer_file_name = os.path.join(base_output_folder,  "single_run_{0}_nodes_{1}.xlsx".format(mip_inputs.n_nodes, current_time))
 
-        # global_results_df["operation_time"] = tv_h.X
+        elif mip_inputs.experiment_mode == "scenario_run":
+            if mip_inputs.optimization_mode == "deterministic_optimal_evaluation":
+                writer_file_name = os.path.join(mip_inputs.subfolder_path,"scenario_run_deterministic_eval_{0}_scenarios.xlsx".format(mip_inputs.n_scenarios))
+                writer_global_file_name = os.path.join(mip_inputs.subfolder_path,"scenario_run_deterministic_eval_global_results.csv".format(mip_inputs.max_scenario_number))
+            else:
+                writer_file_name = os.path.join(mip_inputs.subfolder_path,"scenario_run_{0}_scenarios.xlsx".format(mip_inputs.n_scenarios))
+                writer_global_file_name = os.path.join(mip_inputs.subfolder_path,"scenario_run_global_results.csv".format(mip_inputs.max_scenario_number))
+
+        elif mip_inputs.experiment_mode == "scenario_increasing_deviation_run":
+            if mip_inputs.optimization_mode == "deterministic_optimal_evaluation":
+                writer_file_name = os.path.join(mip_inputs.subfolder_path, "scenario_incr_dev_run_deterministic_eval_{0}_scenarios_{1}_rate.xlsx".format(mip_inputs.n_scenarios, mip_inputs.scenario_rate))
+                writer_global_file_name = os.path.join(mip_inputs.subfolder_path, "scenario_incr_dev_run__deterministic_eval_global_results.csv")
+            else:
+                writer_file_name = os.path.join(mip_inputs.subfolder_path, "scenario_incr_dev_run_{0}_scenarios_{1}_rate.xlsx".format(mip_inputs.n_scenarios, mip_inputs.scenario_rate))
+                writer_global_file_name = os.path.join(mip_inputs.subfolder_path, "scenario_incr_dev_run_global_results.csv")
+
+            global_results_df_row["scenario_rate"] = mip_inputs.scenario_rate
+
+        if mip_inputs.experiment_mode != "single_run":
+            if os.path.isfile(writer_global_file_name):
+                global_results_df_row.to_csv(writer_global_file_name, mode="a", index=False, header=False)
+            else:
+                global_results_df_row.to_csv(writer_global_file_name, mode="a", index=False, header=True)
+
+        writer = pd.ExcelWriter(writer_file_name)
+        global_results_df.to_excel(writer, sheet_name='global_results')
+        scenario_collected_value_results_df.to_excel(writer, sheet_name='scenario_collected_value')
+        x_ijk_results_df.to_excel(writer, sheet_name='x_ijk_results')
+        y_jw_results_df.to_excel(writer, sheet_name='y_jw_results')
+        z_ijw_results_df.to_excel(writer, sheet_name='z_ijw_results')
+        q_ijw_results_df.to_excel(writer, sheet_name='q_ijw_results')
+        b_jw_results_df.to_excel(writer, sheet_name='b_jw_results')
+        ts_jw_results_df.to_excel(writer, sheet_name='ts_jw_results')
+        tm_jw_results_df.to_excel(writer, sheet_name='tm_jw_results')
+        te_jw_results_df.to_excel(writer, sheet_name='te_jw_results')
+        tv_j_results_df.to_excel(writer, sheet_name='tv_j_results')
+        tl_j_results_df.to_excel(writer, sheet_name='tl_j_results')
+        r_jw_results_df.to_excel(writer, sheet_name='r_jw_results')
+        w_ijkl_results_df.to_excel(writer, sheet_name='w_ijkl_results')
+        s_ciw_results_df.to_excel(writer, sheet_name='s_ciw_results')
+
+        mip_inputs.problem_data_df.to_excel(writer, sheet_name='inputs_problem_data')
+        mip_inputs.distance_df["flight_time"] = mip_inputs.distance_df["distance"] / mip_inputs.vehicle_flight_speed
+        mip_inputs.distance_df.to_excel(writer, sheet_name='inputs_distances')
+        mip_inputs.parameters_df.to_excel(writer, sheet_name='inputs_parameters')
+        mip_inputs.scenarios_df.to_excel(writer, sheet_name='inputs_scenario_settings')
+        mip_inputs.fire_ready_nodes_stage_2_df.to_excel(writer, sheet_name='inputs_scenario_rates')
+        writer.close()
+
+        print("The run is completed succesfully and the results are printed to the output folder!")
+
+        # subfolder_name = f"max_scenario_{mip_inputs.max_scenario_number}_on_{current_time}"
+
+
+
+        #
+        # elif mip_inputs.experiment_mode == "combination_run":
+        #     writer_file_name = os.path.join('outputs', "combination_results_{0}_nodes_{1}.csv".format(mip_inputs.n_nodes, mip_inputs.run_start_date))
+        #     if os.path.isfile(writer_file_name):
+        #         global_results_df.to_csv(writer_file_name, mode="a", index=False, header=False)
+        #     else:
+        #         global_results_df.to_csv(writer_file_name, mode="a", index=False, header=True)
+        #
+        # # global_results_df["operation_time"] = tv_h.X
         # global_results_df["number_of_jobs_arrived"] = sum(ts_j_results_df.value > 0) + len(mip_inputs.set_of_active_fires_at_start)
         # global_results_df["number_of_job_processed"] = sum(tv_j_results_df.value > 0) - 1  # substract the base return time
 
