@@ -1,0 +1,2 @@
+n_scenarios,expected_collected_value,scenario_collected_value_results,model_obj_1_value,model_obj_2_value,model_obj_1_bound,model_obj_2_bound,gap_1,gap_2,gurobi_time,python_time,operation_duration,number_of_nodes,number_of_initial_fires,average_number_of_fires_per_scenario,number_of_vehicles,number_of_vehicles_used,initial_fire_node_IDs
+1,1155.7528594130304,{1: 1155.7528594130304},1172.757229693,-0.4273547808354,1190.935577304,-0.4273547808354,0.015501000000000001,0.0,2.1400070190429688,2.14,0.4273547808353592,25,5,5.0,2,2,"4,10,15,24,25"

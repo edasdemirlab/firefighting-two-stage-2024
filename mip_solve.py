@@ -58,14 +58,14 @@ def mathematical_model_solve(mip_inputs):
     tv_j = model.addVars(
         mip_inputs.fire_ready_node_ids,
         lb=0,
-        # ub=mip_inputs.time_limit,
+        ub=mip_inputs.time_limit,
         vtype=GRB.CONTINUOUS,
         name="tv_j",
     )
 
     tv_h = model.addVar(
         lb=0,
-        # ub=mip_inputs.time_limit,
+        ub=mip_inputs.time_limit,
         vtype=GRB.CONTINUOUS,
         name="tv_h",
     )
@@ -74,14 +74,14 @@ def mathematical_model_solve(mip_inputs):
     lv_j = model.addVars(
         mip_inputs.fire_ready_node_ids,
         lb=0,
-        # ub=mip_inputs.time_limit,
+        ub=mip_inputs.time_limit,
         vtype=GRB.CONTINUOUS,
         name="lv_j",
     )
 
     lv_h = model.addVar(
         lb=0,
-        # ub=mip_inputs.time_limit,
+        ub=mip_inputs.time_limit,
         vtype=GRB.CONTINUOUS,
         name="lv_h",
     )
@@ -186,34 +186,43 @@ def mathematical_model_solve(mip_inputs):
         name="r_jw",
     )
 
+    worst_case_r = model.addVar(vtype=GRB.CONTINUOUS, name="worst_case_r")
+
     # model.update()
 
     # set objective
-    # cost_first_party_routes = s_tr_1.prod({key: mip_inputs.hauler_miles_multiplier_first_party * (value + mip_inputs.hauler_fixed_cost_first_party) for key, value in mip_inputs.routes_first_party_distance.items()})
-    # cost_third_party_routes = s_tr_3.prod(mip_inputs.routes_third_party_cost_per_hauler)
-
-
     expected_collected_value = r_jw.prod({(j, w): mip_inputs.scenario_probabilities[w - 1] for (j, w) in r_jw.keys()})
-    # penalty_coef_return_time = 0
-    # penalty_return_time = penalty_coef_return_time * tv_h
+    penalty_coef_return_time = 0
+    penalty_return_time = penalty_coef_return_time * tv_h
+    model.setObjective(expected_collected_value - penalty_return_time)
 
-    # model.setObjective(obj_max - penalty_coef_spread * obj_penalize_fire_spread - penalty_coef_return_time * obj_penalize_operation_time) #
-    # model.setObjective(expected_collected_value - penalty_return_time)
+    # model.setObjective(worst_case_r)
+
 
     # set objectives
-    model.NumObj = 2
-
-    model.setObjectiveN(expected_collected_value, index=0, priority=2, weight=1, name='expected_collected_value')
-    model.setObjectiveN(tv_h, index=1, priority=1, weight=-1, name='tv_h')
-
+    # model.NumObj = 2
+    #
+    # model.setObjectiveN(expected_collected_value, index=0, priority=2, weight=1, name='expected_collected_value')
+    # model.setObjectiveN(tv_h, index=1, priority=1, weight=-1, name='tv_h')
+    #
 
     # equations for prize collection
+    # model.addConstrs((worst_case_r <= gp.quicksum(r_jw[j,w] for j in mip_inputs.fire_ready_node_ids) for w in mip_inputs.scenarios_list),  name="worst_case_link")
+    # for w in mip_inputs.scenarios_list:
+    #         model.addConstr(gp.quicksum(r_jw[j, w] for j in mip_inputs.fire_ready_node_ids) >= 1232)
+
+
+
+
+
+
+
     # constraint 3-6 - determines collected prizes from at each node
     for j in mip_inputs.fire_ready_node_ids:
         for w in mip_inputs.scenarios_list:
             # j = 2
             # w = 1
-            model.addConstr(r_jw[j, w] <= mip_inputs.initial_values[j] - mip_inputs.ns_value_degradation_rate[j, w] * tv_j[j] - mip_inputs.initial_values[j]*b_jw[j, w] + mip_inputs.M_3_1[j, w]*(1 - y_jw[j, w]) + mip_inputs.M_3_2[j, w]*s6_iw[j, w])
+            model.addConstr(r_jw[j, w] <= mip_inputs.initial_values[j] - mip_inputs.ns_value_degradation_rate[j, w] * (tv_j[j]-ts_jw[j, w]) - mip_inputs.initial_values[j]*b_jw[j, w] + mip_inputs.M_3_1[j, w]*(1 - y_jw[j, w]) + mip_inputs.M_3_2[j, w]*s6_iw[j, w])
             model.addConstr(r_jw[j, w] <= mip_inputs.initial_values[j] * (2 - s6_iw[j,w] - y_jw[j,w]))
             model.addConstr(r_jw[j, w] <= mip_inputs.initial_values[j] * (1 - s5_iw[j, w]))
             model.addConstr(b_jw[j, w] >= y_jw[j, w] - mip_inputs.M_6[j] * tv_j[j])
@@ -580,41 +589,38 @@ def mathematical_model_solve(mip_inputs):
     model.ModelSense = -1  # set objective to maximization
     # model.params.TimeLimit = 60
     model.params.MIPGap = 0.03
-    model.params.Presolve = 2
-    model.params.Cuts = 2
-    model.params.MIPFocus = 2
+    # model.params.Presolve = 2
+    # model.params.Cuts = 2
+    # model.params.MIPFocus = 3
     # model.params.Threads = 1
     # model.params.RINS = 0
 
     # model.params.LogFile = "gurobi_log"
     # model.params.Heuristics = 0.2
 
-    env0 = model.getMultiobjEnv(0)
-    env0.setParam('TimeLimit', 10800)
+    # env0 = model.getMultiobjEnv(0)
+    # env0.setParam('TimeLimit', 10800)
     # env0.setParam('NoRelHeurTime', 120)
     # env0.setParam('MIPFocus', 3)
 
-    env1 = model.getMultiobjEnv(1)
-    env1.setParam('TimeLimit', 10)
+    # env1 = model.getMultiobjEnv(1)
+    # env1.setParam('TimeLimit', 10)
 
     # model.update()
     # model.write("model_hand2.lp")
-    # (23.745 - 23.39) == (24.1-23.745)
-    # 23.745 - 23.390
-    # 0.455*0.355
+
     model.update()
     model.printStats()
-    #p=model.presolve()
-    # p.printStats()
 
-    model._bounds = []
-    model._bests = []
-    model._gaps = []
+    # model._bounds = []
+    # model._bests = []
+    # model._gaps = []
 
 
 
     start_time = time.time()
-    model.optimize(callback)
+    model.optimize()
+    # model.optimize(callback)
     end_time = time.time()
     run_time_cpu = round(end_time - start_time, 2)
 
@@ -702,16 +708,20 @@ def mathematical_model_solve(mip_inputs):
         scenario_collected_value_results_df = pd.DataFrame(list(scenario_collected_value_results.items()), columns=['scenario_id', 'collected_value'])
 
 
-        global_results_df = pd.DataFrame(columns=['n_scenarios', 'expected_collected_value', 'scenario_collected_value_results', 'model_obj_1_value', 'model_obj_2_value', 'model_obj_1_bound', 'model_obj_2_bound', 'gap_1', 'gap_2', 'gurobi_time', 'python_time'])
+        # global_results_df = pd.DataFrame(columns=['n_scenarios', 'expected_collected_value', 'scenario_collected_value_results', 'model_obj_1_value', 'model_obj_2_value', 'model_obj_1_bound', 'model_obj_2_bound', 'gap_1', 'gap_2', 'gurobi_time', 'python_time'])
+        # global_results_df = pd.DataFrame(columns=['n_scenarios', 'expected_collected_value', 'scenario_collected_value_results', 'model_obj_value', 'model_obj_bound', 'gap', 'gurobi_time', 'python_time'])
+        global_results_df = pd.DataFrame(
+            columns=['n_scenarios', 'expected_collected_value', 'scenario_collected_value_results', 'model_obj_value',
+                     'model_obj_bound', 'gap', 'gurobi_time', 'python_time'])
 
-        global_results_df.loc[len(global_results_df.index)] = [mip_inputs.n_scenarios, expected_collected_value_result,
-                                                               scenario_collected_value_results, *model._bests,
-                                                               *model._bounds, *model._gaps,
-                                                               model.runtime, run_time_cpu]
-
-
-        # global_results_df.loc[len(global_results_df.index)] = [expected_collected_value_result, scenario_collected_value_results, model.objval, model.objbound, model.mipgap,
+        # global_results_df.loc[len(global_results_df.index)] = [mip_inputs.n_scenarios, expected_collected_value_result,
+        #                                                        scenario_collected_value_results, *model._bests,
+        #                                                        *model._bounds, *model._gaps,
         #                                                        model.runtime, run_time_cpu]
+
+
+        global_results_df.loc[len(global_results_df.index)] = [mip_inputs.n_scenarios, expected_collected_value_result, scenario_collected_value_results, model.objval, model.objbound, model.mipgap,
+                                                               model.runtime, run_time_cpu]
 
         global_results_df["operation_duration"] = tv_h.X
         global_results_df["number_of_nodes"] = mip_inputs.n_nodes
