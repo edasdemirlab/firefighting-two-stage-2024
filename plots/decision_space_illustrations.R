@@ -11,7 +11,7 @@ source("decision_space_functions.R")
 
 # read output file
 # input_name <- "single_run_25_nodes_2024_09_25_15_52"
-input_name <- "single_run_25_nodes_2025_09_03_12_06"
+input_name <- "single_run_9_nodes_2025_09_06_21_34"
 input_file <- paste0(input_name,".xlsx")
 
 # Step 2: Create a folder in the current directory using the input file's name
@@ -114,6 +114,9 @@ for (scenario_id in scenario_ids) {
 }
 
 
+# NEW: value & spread maps (save before initial fires)
+plot_value_map(inputs_problem_data_df, output_directory)
+plot_spread_map(inputs_problem_data_df, output_directory)  # use_rate=TRUE by default
 
 plot_scenarios(inputs_problem_data_df, vehicle_routes, scenario_data_list, output_directory)
 

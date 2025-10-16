@@ -192,7 +192,7 @@ def mathematical_model_solve(mip_inputs):
 
     # set objective
     expected_collected_value = r_jw.prod({(j, w): mip_inputs.scenario_probabilities[w - 1] for (j, w) in r_jw.keys()})
-    penalty_coef_return_time = 0
+    penalty_coef_return_time = 0.001
     penalty_return_time = penalty_coef_return_time * tv_h
     model.setObjective(expected_collected_value - penalty_return_time)
 
@@ -281,9 +281,12 @@ def mathematical_model_solve(mip_inputs):
         model.addConstr(tv_j[j] <= lv_h + x_ijk.prod(home_to_j_coef, mip_inputs.base_node_id, j, '*') + mip_inputs.M_16[j] * (
                 1 - x_ijk.sum(mip_inputs.base_node_id, j, '*')))
 
-    model.addConstr(lv_h == 0)
-    # model.addConstr(x_ijk[1, 3, 1] == 1)
-    # model.addConstr(x_ijk[1, 8, 2] == 1)
+    # model.addConstr(lv_h == 0.107782288)
+    # model.addConstr(x_ijk[1, 5, 1] == 1)
+    # model.addConstr(x_ijk[5, 3, 1] == 1)
+    # model.addConstr(x_ijk[3, 7, 1] == 1)
+    # # model.addConstr(tv_j[3] <= 1.25)
+    # model.addConstr(x_ijk[3, 5, 1] == 1)
 
     # Constraint 18 - determines arrival times to the nodes
     for j in mip_inputs.fire_ready_node_ids:
@@ -588,7 +591,7 @@ def mathematical_model_solve(mip_inputs):
 
     model.ModelSense = -1  # set objective to maximization
     # model.params.TimeLimit = 60
-    model.params.MIPGap = 0.03
+    model.params.MIPGap = 0.01
     # model.params.Presolve = 2
     # model.params.Cuts = 2
     # model.params.MIPFocus = 3

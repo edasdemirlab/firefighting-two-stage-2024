@@ -155,9 +155,12 @@ if user_inputs.solution_method == "ga":
         from ga.model import evaluate_solution_details, expected_reward
 
         best_chrom, best_val = res["best"]
+        best_decw = res.get("best_decoder")
+        best_waits = res.get("best_waits", {})
 
-        details = evaluate_solution_details(data, best_chrom)
+        details = evaluate_solution_details(data, best_chrom, dec_override=best_decw)
         scen_totals = details["per_scen_totals"]  # dict: {scenario_id: total}
+
         n_scen = len(scen_totals)
 
         # If you timed the GA externally, use that value; otherwise estimate 0 for placeholder
@@ -183,16 +186,27 @@ if user_inputs.solution_method == "ga":
         df_global = pd.DataFrame(global_rows, columns=["result_name", "results"])
 
         # 2) routes sheet (vehicle timeline)
-        # columns: vehicle, step, node_id, node_type, arrival_time
+        # columns: vehicle, step, node_id, node_type, arrival_time, wait_before_leg
         rows_routes = []
         for k, steps in details["timeline"].items():
+            # We need to annotate waits for FIRE nodes only.
+            # For vehicle k, fire visits appear in chrom order; waits[k][q] applies before q-th fire.
+            waits_k = best_waits.get(k, [])
+            fire_idx = 0
             for step_idx, nid, ntype, arr in steps:
+                wait_val = 0.0
+                if ntype == "fire":
+                    # if we have a corresponding wait entry, use it
+                    if fire_idx < len(waits_k):
+                        wait_val = float(waits_k[fire_idx])
+                    fire_idx += 1
                 rows_routes.append({
                     "vehicle": k,
                     "step": step_idx,
                     "node_id": nid,
                     "node_type": ntype,
-                    "arrival_time": arr
+                    "arrival_time": arr,
+                    "wait_before_leg": wait_val
                 })
         df_routes = pd.DataFrame(rows_routes).sort_values(["vehicle", "step"]).reset_index(drop=True)
 
@@ -282,6 +296,51 @@ if user_inputs.solution_method == "ga":
 
         print(f"[GA] Excel report saved: {xlsx_path}")
 
+elif user_inputs.solution_method == "astar":
+
+    import json
+    import os
+    from datetime import datetime
+
+    from ga.io import load_problem
+    from astar.astar import run_astar, write_astar_outputs, _make_outdir_astar
+
+    EXCEL_PATH = "inputs/inputs_to_load.xlsx"
+    data = load_problem(EXCEL_PATH)
+
+    # (Optional) choose a small candidate set for exact runs; otherwise None → data.Jstar
+    candidate_nodes = None
+    # Example focusing:
+    # init_fires = [j for j in data.Jstar if data.nodes[j].state == 1]
+    # cand = set(init_fires)
+    # for j in init_fires:
+    #     cand.update(data.nodes[j].neighbors)
+    # candidate_nodes = sorted(cand)
+
+    res = run_astar(
+        data,
+        candidate_nodes=None,  # or a focused small set when certifying
+        time_limit_sec=600,
+        gap_tol=0.03,  # exact if it finishes
+        use_travel_aware_ub=True,  # <<< tighter UB
+        branch_all_insert_positions=False,  # <<< explore all insert positions
+        log_every=50,
+    )
+
+    out_dir = _make_outdir_astar(base_dir="outputs/astar")
+    write_astar_outputs(out_dir, data, res)
+
+    best_plan, best_val, best_mk = res["best"]
+    print(json.dumps({
+        "best_value": best_val,
+        "best_makespan": best_mk,
+        "best_routes": best_plan,
+        "runtime_sec": res.get("runtime_sec"),
+        "nodes_expanded": res.get("nodes_expanded"),
+        "nodes_pruned": res.get("nodes_pruned"),
+        "stop_reason": res.get("stop_reason"),
+        "out_dir": out_dir
+    }, indent=2))
 
 
 else:
@@ -293,6 +352,11 @@ else:
             user_inputs.subfolder_path = os.path.join(base_output_folder, subfolder_name)
         mip_inputs = mip_setup.InputsSetup(user_inputs)
         mip_solve.mathematical_model_solve(mip_inputs)
+
+
+
+
+
 
     elif user_inputs.experiment_mode == "scenario_run":
         min_scenario_number = user_inputs.parameters_df.loc["min_scenario_number", "value"]

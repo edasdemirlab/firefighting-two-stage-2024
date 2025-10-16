@@ -1,0 +1,8 @@
+3x3'te MIP optimal, GA optimalden kotu cikiyor. 
+
+Bunu debug edince nedeninin loitering oldugunu kesfettim.
+
+MIP optimal bir yerde loiter edip yanginin gelmesini bekliyor.
+
+
+Bunu GA ve A* ekleyebilir miyiz

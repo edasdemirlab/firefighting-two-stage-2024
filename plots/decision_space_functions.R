@@ -546,3 +546,270 @@ plot_initial_fires <- function(inputs_problem_data_df, output_directory){
   # Reset the margins to default after plotting
   par(mar = c(5, 4, 4, 2) + 0.1)
 }
+
+
+# ---- VALUE & SPREAD MAPS ----------------------------------------------------
+
+# Internal helper: continuous color lookup (values -> palette index)
+
+
+# Draw filled grid rectangles from a vector of fill colors
+.draw_filled_grid <- function(df_nodes, fill_cols, border_col = "gray60") {
+  # assumes df has x_coordinate, y_coordinate
+  rect(xleft   = df_nodes$x_coordinate - 0.5,
+       ybottom = df_nodes$y_coordinate - 0.5,
+       xright  = df_nodes$x_coordinate + 0.5,
+       ytop    = df_nodes$y_coordinate + 0.5,
+       col     = fill_cols,
+       border  = border_col)
+}
+
+# Optional: simple color legend (continuous)
+.draw_colorbar <- function(title, palette_fun, rng, n = 100, reverse = FALSE) {
+  par(xpd = NA)
+  usr <- par("usr")
+  # colorbar box coords (right margin area)
+  x1 <- usr[2] + 0.2; x2 <- usr[2] + 0.5
+  y1 <- usr[3];       y2 <- usr[3] + (usr[4] - usr[3]) * 0.8
+  pal <- palette_fun(n)
+  if (reverse) pal <- rev(pal)
+  ys <- seq(y1, y2, length.out = n + 1)
+  for (i in 1:n) {
+    rect(x1, ys[i], x2, ys[i + 1], col = pal[i], border = NA)
+  }
+  rect(x1, y1, x2, y2, border = "gray40")
+  axis_ticks <- pretty(rng, n = 4)
+  axis_pos   <- y1 + (axis_ticks - rng[1]) / (rng[2] - rng[1]) * (y2 - y1)
+  segments(x2, axis_pos, x2 + 0.05, axis_pos, col = "gray40")
+  text(x2 + 0.07, axis_pos, labels = format(axis_ticks, digits = 3), adj = 0, cex = 0.8)
+  text((x1 + x2) / 2, y2 + 0.06 * (usr[4] - usr[3]), labels = title, cex = 0.9)
+  par(xpd = FALSE)
+}
+
+# VALUE MAP: more value -> more green
+# VALUE MAP: white = 0, darkest green = 100; optional forest texture
+# VALUE MAP: white = 0, darkest green = 100; optional forest texture
+# VALUE MAP: white = 0, darkest green = 100; node IDs printed on cells
+# =========================
+# VALUE MAP (white->dark green)
+# =========================
+# =========================
+# VALUE MAP (white -> dark green), with readable colorbar labels
+# =========================
+# =========================
+# VALUE MAP (white -> dark green), node labels always black
+# =========================
+plot_value_map <- function(inputs_problem_data_df, output_directory) {
+  stopifnot(all(c("x_coordinate","y_coordinate","initial_value","node_state","node_id") %in% names(inputs_problem_data_df)))
+  
+  # ---- helpers ----
+  .white_to <- function(hex, n = 200) grDevices::colorRampPalette(c("#FFFFFF", hex))(n)
+  .map_to_colors <- function(x, palette_fun, zmin = NULL, zmax = NULL, n = 200) {
+    pal <- palette_fun(n); out <- rep(pal[1], length(x))
+    x_ok <- x[is.finite(x)]; if (!length(x_ok)) return(out)
+    if (is.null(zmin)) zmin <- min(x_ok, na.rm = TRUE)
+    if (is.null(zmax)) zmax <- max(x_ok, na.rm = TRUE)
+    den <- (zmax - zmin); if (den == 0) den <- 1
+    z <- (x - zmin) / den; z[!is.finite(z)] <- 0; z <- pmin(pmax(z,0),1)
+    idx <- pmax(1, pmin(n, floor(z*(n-1))+1)); out[] <- pal[idx]; out
+  }
+  .draw_filled_grid <- function(df_nodes, fill_cols, border_col = "gray50") {
+    rect(df_nodes$x_coordinate-0.5, df_nodes$y_coordinate-0.5,
+         df_nodes$x_coordinate+0.5, df_nodes$y_coordinate+0.5,
+         col = fill_cols, border = border_col)
+  }
+  
+  file_png <- file.path(output_directory, "value_map.png")
+  file_svg <- file.path(output_directory, "value_map.svg")
+  
+  vals <- inputs_problem_data_df$initial_value
+  zmin <- 0; zmax <- 100
+  vals <- pmin(pmax(vals, zmin), zmax)
+  
+  pal_fun   <- function(n) .white_to("#00441B", n)   # darkest green
+  fill_cols <- .map_to_colors(vals, pal_fun, zmin, zmax, n = 240)
+  
+  .plot_fun <- function() {
+    oldpar <- par(no.readonly = TRUE); on.exit(par(oldpar), add = TRUE)
+    par(pty = "s", mar = c(5, 5, 2, 8) + 0.1)  # wider right margin
+    
+    # Draw base grid locally (to respect widened margin)
+    plot(c(), xlim = c(0, ceiling(max(pX))), ylim = c(0, ceiling(max(pY))),
+         asp = 1, xaxs = "i", yaxs = "i", xaxt = "n", yaxt = "n", ylab = "", xlab = "")
+    x <- seq(0, ceiling(max(pX)), 1)
+    axis(1, at = x, labels = TRUE); axis(2, at = x, labels = TRUE)
+    grid(nx = node_at_a_side, ny = node_at_a_side, col = "gray25", lty = "dotted", lwd = par("lwd"), equilogs = TRUE)
+    points(0.5, 0.5, col = "black", pch = 17, cex = 3)
+    
+    .draw_filled_grid(inputs_problem_data_df, fill_cols, "gray50")
+    
+    # Node numbers (ALWAYS BLACK)
+    text(inputs_problem_data_df$x_coordinate, inputs_problem_data_df$y_coordinate,
+         labels = inputs_problem_data_df$node_id, col = "black", cex = 0.9, font = 2)
+    
+    # Hatching overlays
+    water_id <- inputs_problem_data_df$node_id[inputs_problem_data_df$node_state == 5]
+    if (length(water_id)) for (i in water_id) draw_hatching(pX[i], pY[i], node_type = "water")
+    block_nodes <- inputs_problem_data_df$node_id[inputs_problem_data_df$node_state == 4]
+    if (length(block_nodes)) for (i in block_nodes) draw_hatching(pX[i], pY[i], node_type = "block")
+    
+    # Colorbar (with explicit min & max; proportional placement)
+    par(xpd = NA)
+    usr <- par("usr"); dx <- usr[2]-usr[1]; dy <- usr[4]-usr[3]
+    x1 <- usr[2] + 0.06*dx; x2 <- usr[2] + 0.22*dx
+    y1 <- usr[3] + 0.10*dy; y2 <- usr[3] + 0.90*dy
+    pal <- pal_fun(120); ys <- seq(y1, y2, length.out = 121)
+    for (j in 1:120) rect(x1, ys[j], x2, ys[j+1], col = pal[j], border = NA)
+    rect(x1, y1, x2, y2, border = "gray40")
+    axis_ticks <- sort(unique(c(zmin, pretty(c(zmin, zmax), n = 3), zmax)))
+    axis_pos   <- y1 + (axis_ticks - zmin)/(zmax - zmin) * (y2 - y1)
+    segments(x2, axis_pos, x2 + 0.03*dx, axis_pos, col = "gray40")
+    text(x2 + 0.04*dx, axis_pos, labels = format(axis_ticks, trim = TRUE), adj = 0, cex = 0.8)
+    text((x1 + x2)/2, y2 + 0.04*dy, labels = "Value", cex = 0.9)
+    par(xpd = FALSE)
+  }
+  
+  png(file_png, width = 1200, height = 1200, res = 200); .plot_fun(); dev.off()
+  svglite::svglite(file_svg, width = 6.4, height = 6.4);   .plot_fun(); dev.off()
+}
+# =========================
+# SPREAD MAP (white -> bright red), node labels always black
+# =========================
+plot_spread_map <- function(inputs_problem_data_df, output_directory, use_rate = TRUE) {
+  stopifnot(all(c("x_coordinate","y_coordinate","fire_spread_rate","node_state","node_id") %in% names(inputs_problem_data_df)))
+  
+  # ---- helpers ----
+  .white_to <- function(hex, n = 200) grDevices::colorRampPalette(c("#FFFFFF", hex))(n)
+  .map_to_colors <- function(x, palette_fun, zmin = NULL, zmax = NULL, n = 200) {
+    pal <- palette_fun(n); out <- rep(pal[1], length(x))
+    x_ok <- x[is.finite(x)]; if (!length(x_ok)) return(out)
+    if (is.null(zmin)) zmin <- min(x_ok, na.rm = TRUE)
+    if (is.null(zmax)) zmax <- max(x_ok, na.rm = TRUE)
+    den <- (zmax - zmin); if (den == 0) den <- 1
+    z <- (x - zmin) / den; z[!is.finite(z)] <- 0; z <- pmin(pmax(z,0),1)
+    idx <- pmax(1, pmin(n, floor(z*(n-1))+1)); out[] <- pal[idx]; out
+  }
+  .draw_filled_grid <- function(df_nodes, fill_cols, border_col = "gray50") {
+    rect(df_nodes$x_coordinate-0.5, df_nodes$y_coordinate-0.5,
+         df_nodes$x_coordinate+0.5, df_nodes$y_coordinate+0.5,
+         col = fill_cols, border = border_col)
+  }
+  
+  file_png <- file.path(output_directory, "spread_map.png")
+  file_svg <- file.path(output_directory, "spread_map.svg")
+  
+  if (use_rate) { z <- inputs_problem_data_df$fire_spread_rate; leg <- "Rate"
+  } else         { z <- 1/inputs_problem_data_df$fire_spread_rate; leg <- "Time to spread" }
+  
+  z_ok <- z[is.finite(z)]
+  zmin <- if (length(z_ok)) min(z_ok) else 0
+  zmax <- if (length(z_ok)) max(z_ok) else 1
+  
+  # Pure bright red ramp (white -> red)
+  pal_fun   <- function(n) .white_to("#FF0000", n)
+  fill_cols <- .map_to_colors(z, pal_fun, zmin, zmax, n = 240)
+  
+  .plot_fun <- function() {
+    oldpar <- par(no.readonly = TRUE); on.exit(par(oldpar), add = TRUE)
+    par(pty = "s", mar = c(5, 5, 2, 8) + 0.1)
+    
+    plot(c(), xlim = c(0, ceiling(max(pX))), ylim = c(0, ceiling(max(pY))),
+         asp = 1, xaxs = "i", yaxs = "i", xaxt = "n", yaxt = "n", ylab = "", xlab = "")
+    x <- seq(0, ceiling(max(pX)), 1)
+    axis(1, at = x, labels = TRUE); axis(2, at = x, labels = TRUE)
+    grid(nx = node_at_a_side, ny = node_at_a_side, col = "gray25", lty = "dotted", lwd = par("lwd"), equilogs = TRUE)
+    points(0.5, 0.5, col = "black", pch = 17, cex = 3)
+    
+    .draw_filled_grid(inputs_problem_data_df, fill_cols, "gray50")
+    
+    # Node numbers (ALWAYS BLACK)
+    text(inputs_problem_data_df$x_coordinate, inputs_problem_data_df$y_coordinate,
+         labels = inputs_problem_data_df$node_id, col = "black", cex = 0.9, font = 2)
+    
+    # Hatching overlays
+    water_id <- inputs_problem_data_df$node_id[inputs_problem_data_df$node_state == 5]
+    if (length(water_id)) for (i in water_id) draw_hatching(pX[i], pY[i], node_type = "water")
+    block_nodes <- inputs_problem_data_df$node_id[inputs_problem_data_df$node_state == 4]
+    if (length(block_nodes)) for (i in block_nodes) draw_hatching(pX[i], pY[i], node_type = "block")
+    
+    # Colorbar (with explicit min & max; proportional placement)
+    par(xpd = NA)
+    usr <- par("usr"); dx <- usr[2]-usr[1]; dy <- usr[4]-usr[3]
+    x1 <- usr[2] + 0.06*dx; x2 <- usr[2] + 0.22*dx
+    y1 <- usr[3] + 0.10*dy; y2 <- usr[3] + 0.90*dy
+    pal <- pal_fun(120); ys <- seq(y1, y2, length.out = 121)
+    for (j in 1:120) rect(x1, ys[j], x2, ys[j+1], col = pal[j], border = NA)
+    rect(x1, y1, x2, y2, border = "gray40")
+    axis_ticks <- sort(unique(c(zmin, pretty(c(zmin, zmax), n = 3), zmax)))
+    axis_pos   <- y1 + (axis_ticks - zmin)/(zmax - zmin) * (y2 - y1)
+    segments(x2, axis_pos, x2 + 0.03*dx, axis_pos, col = "gray40")
+    text(x2 + 0.04*dx, axis_pos, labels = format(axis_ticks, trim = TRUE), adj = 0, cex = 0.8)
+    text((x1 + x2)/2, y2 + 0.04*dy, labels = leg, cex = 0.9)
+    par(xpd = FALSE)
+  }
+  
+  png(file_png, width = 1200, height = 1200, res = 200); .plot_fun(); dev.off()
+  svglite::svglite(file_svg, width = 6.4, height = 6.4);   .plot_fun(); dev.off()
+}
+
+# SPREAD MAP: faster spread -> more red (higher risk)
+# SPREAD MAP: darker red = more spread (reversed scale)
+# SPREAD MAP: darker red = more spread; node IDs printed on cells
+# =========================
+# SPREAD MAP (white->bright red)
+# =========================
+# =========================
+# SPREAD MAP (white -> bright red), with readable colorbar labels
+# =========================
+
+# --- COLOR UTILITIES ----------------------------------------------------------
+# Guaranteed white->target_color ramp
+.white_to <- function(hex, n = 200) grDevices::colorRampPalette(c("#FFFFFF", hex))(n)
+
+# Map numeric vector x to a color vector using a palette function
+.map_to_colors <- function(x, palette_fun, zmin = NULL, zmax = NULL, n = 200) {
+  pal <- palette_fun(n)
+  out <- rep(pal[1], length(x))  # default to lowest color
+  x_ok <- x[is.finite(x)]
+  if (length(x_ok) == 0L) return(out)
+  if (is.null(zmin)) zmin <- min(x_ok, na.rm = TRUE)
+  if (is.null(zmax)) zmax <- max(x_ok, na.rm = TRUE)
+  z <- (x - zmin) / (zmax - zmin)
+  z[!is.finite(z)] <- 0
+  z <- pmin(pmax(z, 0), 1)
+  idx <- pmax(1, pmin(n, floor(z * (n - 1)) + 1))
+  out[] <- pal[idx]
+  out
+}
+
+# --- SIMPLE TREE GLYPH FOR "FOREST" LOOK -------------------------------------
+# Draw a small tree (triangle canopy + trunk) centered at (x,y)
+.draw_tree <- function(x, y, size = 0.08, col_canopy = "#2E7D32", col_trunk = "#5D4037") {
+  # canopy (triangle)
+  canopy <- rbind(
+    c(x,             y + size*1.2),
+    c(x - size*0.9,  y - size*0.2),
+    c(x + size*0.9,  y - size*0.2)
+  )
+  polygon(canopy[,1], canopy[,2], col = col_canopy, border = NA)
+  # trunk (rectangle)
+  rect(x - size*0.15, y - size*0.35, x + size*0.15, y - size*0.05, col = col_trunk, border = NA)
+}
+
+# Sprinkle trees within a grid cell with density proportional to norm_val in [0,1]
+# cell centered at (cx, cy), half-width/height = 0.5 (your grid)
+.draw_forest_cell <- function(cx, cy, norm_val, max_trees = 6L, seed = NULL) {
+  # Treat NA / NaN / -Inf / +Inf as 0 density
+  if (!is.finite(norm_val)) norm_val <- 0
+  norm_val <- max(0, min(1, norm_val))
+  n_trees <- round(max_trees * norm_val)
+  if (is.na(n_trees) || n_trees <= 0) return(invisible())
+  
+  if (!is.null(seed)) set.seed(seed + as.integer(cx*1000 + cy*10))
+  xs <- runif(n_trees, cx - 0.45, cx + 0.45)
+  ys <- runif(n_trees, cy - 0.45, cy + 0.45)
+  sizes <- runif(n_trees, 0.06, 0.1)
+  for (i in seq_len(n_trees)) .draw_tree(xs[i], ys[i], size = sizes[i])
+}
+
+

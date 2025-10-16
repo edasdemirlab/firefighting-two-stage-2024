@@ -2,10 +2,9 @@ import random, time
 import statistics
 from typing import Dict, List, Tuple
 from .core import NodeId, ProblemData
-from .model import Chromosome, expected_reward
 from .core import STATE_INIT_FIRE
 from .model import travel_time
-from ga.model import Chromosome, value_and_makespan
+from ga.model import Chromosome, value_and_makespan, expected_reward_greedy_loitering
 
 # ---------------------------
 # Helpers for subset encoding
@@ -185,9 +184,9 @@ def run_ga(data: ProblemData,
 
     # ---- helpers ----
     def evaluate_pair(ch: Chromosome):
-        # returns (chrom_pruned, (value, makespan))
-        val, mk, chp, _ = value_and_makespan(data, ch)
-        return chp, (val, mk)
+        # returns (chrom_pruned, (value, makespan), dec_with_waits, waits)
+        val, mk, chp, decw, waits = value_and_makespan(data, ch)
+        return chp, (val, mk), decw, waits
 
     def better(a, b):
         """Return True if a is lexicographically better than b."""
@@ -206,19 +205,26 @@ def run_ga(data: ProblemData,
     if heuristic_seed_ratio > 0 and n_seeds == 0:
         n_seeds = 1
 
+    # deneme={0: [6, 7, 5, 8,9]}
+    # deneme = dedupe_chromosome(deneme)
+    # deneme_1, deneme_2 = evaluate_pair(deneme)
+    #
+
+
+
     # Heuristic seeds: initial-fire-only, nearest-neighbor per vehicle
     for _ in range(min(n_seeds, pop_size)):
         ch = build_seed_initial_fire_only(data, rng)
         ch = dedupe_chromosome(ch)
-        chp, pair = evaluate_pair(ch)
-        pop.append((chp, pair))
+        chp, pair, decw, waits = evaluate_pair(ch)
+        pop.append((chp, pair, decw, waits))
 
     # Fill remainder with random subset individuals
     while len(pop) < pop_size:
         ch = init_random_subset(candidates, data.n_vehicles, rng, coverage_ratio=coverage_ratio)
         ch = dedupe_chromosome(ch)
-        chp, pair = evaluate_pair(ch)
-        pop.append((chp, pair))
+        chp, pair, decw, waits = evaluate_pair(ch)
+        pop.append((chp, pair, decw, waits))
 
     # Lexicographic sort: highest value first, then lowest makespan
     pop.sort(key=lambda x: (-x[1][0], x[1][1]))
@@ -274,11 +280,11 @@ def run_ga(data: ProblemData,
             c2 = dedupe_chromosome(c2)
 
             # evaluate children (lexicographic pair)
-            chp1, pair1 = evaluate_pair(c1)
-            newpop.append((chp1, pair1))
+            chp1, pair1, decw1, waits1 = evaluate_pair(c1)
+            newpop.append((chp1, pair1, decw1, waits1))
             if len(newpop) < pop_size:
-                chp2, pair2 = evaluate_pair(c2)
-                newpop.append((chp2, pair2))
+                chp2, pair2, decw2, waits2 = evaluate_pair(c2)
+                newpop.append((chp2, pair2, decw2, waits2))
 
         # lexicographic sort
         newpop.sort(key=lambda x: (-x[1][0], x[1][1]))
@@ -309,13 +315,18 @@ def run_ga(data: ProblemData,
 
     best_chrom = best[0]
     best_val, best_mk = best[1]
+    best_decw = best[2]
+    best_waits = best[3]
+
     return {
         "best": (best_chrom, best_val),
         "best_makespan": best_mk,
+        "best_waits": best_waits,  # <<< NEW
+        "best_decoder": best_decw,  # <<< NEW (DecodeResult with waits applied)
         "generations": gen,
         "stall": stall,
-        "stop_reason": stop_reason,  # <<< NEW
-        "elapsed_sec": elapsed,  # <<< NEW (raw wall time from run_ga)
+        "stop_reason": stop_reason,
+        "elapsed_sec": elapsed,
         "history": history
     }
 
