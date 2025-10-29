@@ -11,7 +11,7 @@ source("decision_space_functions.R")
 
 # read output file
 # input_name <- "single_run_25_nodes_2024_09_25_15_52"
-input_name <- "single_run_9_nodes_2025_09_06_21_34"
+input_name <- "exp3"
 input_file <- paste0(input_name,".xlsx")
 
 # Step 2: Create a folder in the current directory using the input file's name

@@ -591,7 +591,7 @@ def mathematical_model_solve(mip_inputs):
 
     model.ModelSense = -1  # set objective to maximization
     # model.params.TimeLimit = 60
-    model.params.MIPGap = 0.01
+    model.params.MIPGap = 0.02
     # model.params.Presolve = 2
     # model.params.Cuts = 2
     # model.params.MIPFocus = 3

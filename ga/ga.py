@@ -211,7 +211,6 @@ def run_ga(data: ProblemData,
     #
 
 
-
     # Heuristic seeds: initial-fire-only, nearest-neighbor per vehicle
     for _ in range(min(n_seeds, pop_size)):
         ch = build_seed_initial_fire_only(data, rng)

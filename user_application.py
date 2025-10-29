@@ -37,6 +37,7 @@ if user_inputs.solution_method == "ga":
     import os
     from datetime import datetime
     import matplotlib.pyplot as plt
+    import matplotlib.ticker as mticker
 
     from ga.io import load_problem, load_ga_params
     from ga.ga import run_ga
@@ -96,10 +97,12 @@ if user_inputs.solution_method == "ga":
         plt.plot(gens, bests, label="Best")
         plt.plot(gens, means, label="Mean")
         plt.xlabel("Generation")
-        plt.ylabel("Fitness (expected reward)")
+        plt.ylabel("Fitness (expected value)")
         plt.title("GA Convergence")
         plt.legend()
         plt.grid(True, alpha=0.3)
+        ax = plt.gca()
+        ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))
         plt.savefig(os.path.join(out_dir, "convergence.png"), dpi=150)
         plt.close()
 
